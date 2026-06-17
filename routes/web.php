@@ -16,8 +16,11 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', fn () => redirect()->route('consumidores.index'));
 
 // ── Consumidores ───────────────────────────────────────────────────────────
+// ->parameters() corrige singularização incorreta do português:
+// Laravel gerava {consumidore} ao invés de {consumidor}, quebrando o model binding.
 Route::resource('consumidores', ConsumidorController::class)
-    ->except(['show']);
+    ->parameters(['consumidores' => 'consumidor'])
+    ->only(['index', 'create', 'store', 'destroy']);
 
 // ── Leituras ───────────────────────────────────────────────────────────────
 Route::resource('leituras', LeituraController::class)

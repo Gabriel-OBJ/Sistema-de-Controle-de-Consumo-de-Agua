@@ -28,7 +28,7 @@
                             <th>Endereço</th>
                             <th>Telefone</th>
                             <th>Nº Medidor</th>
-                            <th class="text-end pe-4">Ações</th>
+                            <th class="text-end pe-4">Remover</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -47,22 +47,27 @@
                                 </span>
                             </td>
                             <td class="text-end pe-4">
-                                <a href="{{ route('consumidores.edit', $consumidor) }}"
-                                   class="btn btn-sm btn-outline-primary me-1"
-                                   id="btn-editar-{{ $consumidor->id }}">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-
-                                <form action="{{ route('consumidores.destroy', $consumidor) }}"
-                                      method="POST" class="d-inline"
-                                      onsubmit="return confirm('Remover {{ addslashes($consumidor->nome) }}? Esta ação não pode ser desfeita.')">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="btn btn-sm btn-outline-danger"
-                                            id="btn-remover-{{ $consumidor->id }}">
-                                        <i class="bi bi-trash3"></i>
+                                @if($consumidor->leituras()->exists())
+                                    {{-- Consumidor com histórico: remoção bloqueada --}}
+                                    <button class="btn btn-sm btn-outline-secondary"
+                                            disabled
+                                            title="Não é possível remover: consumidor possui histórico de leituras">
+                                        <i class="bi bi-lock-fill"></i>
                                     </button>
-                                </form>
+                                @else
+                                    {{-- Consumidor sem histórico: pode ser removido --}}
+                                    <form action="{{ route('consumidores.destroy', $consumidor) }}"
+                                          method="POST" class="d-inline"
+                                          onsubmit="return confirm('Remover {{ addslashes($consumidor->nome) }}?\n\nEsta ação não pode ser desfeita.')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                id="btn-remover-{{ $consumidor->id }}"
+                                                title="Remover consumidor">
+                                            <i class="bi bi-trash3"></i>
+                                        </button>
+                                    </form>
+                                @endif
                             </td>
                         </tr>
                         @endforeach
