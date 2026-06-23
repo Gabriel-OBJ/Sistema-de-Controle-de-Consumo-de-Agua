@@ -4,39 +4,57 @@ use App\Http\Controllers\ConfiguracaoTaxaController;
 use App\Http\Controllers\ConsumidorController;
 use App\Http\Controllers\FaturaController;
 use App\Http\Controllers\LeituraController;
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes — Sistema de Controle de Consumo de Água
-|--------------------------------------------------------------------------
-*/
-
-// Redireciona a raiz para o painel de consumidores
+// ── Página inicial ──────────────────────────────────────────────────────────
 Route::get('/', fn () => redirect()->route('consumidores.index'));
 
-// ── Consumidores ───────────────────────────────────────────────────────────
-// ->parameters() corrige singularização incorreta do português:
-// Laravel gerava {consumidore} ao invés de {consumidor}, quebrando o model binding.
-Route::resource('consumidores', ConsumidorController::class)
-    ->parameters(['consumidores' => 'consumidor'])
-    ->only(['index', 'create', 'store', 'destroy']);
+// ── Dashboard (Breeze) ──────────────────────────────────────────────────────
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
 
-// ── Leituras ───────────────────────────────────────────────────────────────
-Route::resource('leituras', LeituraController::class)
-    ->only(['index', 'create', 'store']);
+// ── Perfil do usuário (Breeze) ──────────────────────────────────────────────
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
 
-// ── Faturas ────────────────────────────────────────────────────────────────
-Route::resource('faturas', FaturaController::class)
-    ->only(['index']);
+// ── Rotas do Sistema (requerem autenticação) ────────────────────────────────
+Route::middleware('auth')->group(function () {
 
-// Marcar fatura como paga (PATCH para semântica REST correta)
-Route::patch('faturas/{fatura}/pagar', [FaturaController::class, 'pagar'])
-    ->name('faturas.pagar');
+    // ── Rotas exclusivas para ADMIN ─────────────────────────────────────────
+    // Apenas administradores podem cadastrar, editar consumidores e alterar taxas.
+    Route::middleware('admin')->group(function () {
 
-// ── Configuração de Taxa ────────────────────────────────────────────────────
-Route::get('configuracao', [ConfiguracaoTaxaController::class, 'index'])
-    ->name('configuracao.index');
+        // Consumidores: cadastro e remoção
+        Route::resource('consumidores', ConsumidorController::class)
+            ->parameters(['consumidores' => 'consumidor'])
+            ->only(['create', 'store', 'destroy']);
 
-Route::post('configuracao', [ConfiguracaoTaxaController::class, 'store'])
-    ->name('configuracao.store');
+        // Configuração de taxa de cobrança
+        Route::get('configuracao', [ConfiguracaoTaxaController::class, 'index'])
+            ->name('configuracao.index');
+        Route::post('configuracao', [ConfiguracaoTaxaController::class, 'store'])
+            ->name('configuracao.store');
+    });
+
+    // ── Rotas acessíveis a todos os usuários autenticados ───────────────────
+    // Listagem de consumidores (sem ações de escrita)
+    Route::get('consumidores', [ConsumidorController::class, 'index'])
+        ->name('consumidores.index');
+
+    // Leituras: listar e registrar (leiturista e admin)
+    Route::resource('leituras', LeituraController::class)
+        ->only(['index', 'create', 'store']);
+
+    // Faturas: visualizar e marcar como paga
+    Route::get('faturas', [FaturaController::class, 'index'])
+        ->name('faturas.index');
+    Route::patch('faturas/{fatura}/pagar', [FaturaController::class, 'pagar'])
+        ->name('faturas.pagar');
+});
+
+require __DIR__ . '/auth.php';
