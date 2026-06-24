@@ -1,77 +1,73 @@
 <?php
+echo "╔══════════════════════════════════════════════════╗\n";
+echo "║   FASE 3 — SEGURANÇA BÁSICA (TESTES)             ║\n";
+echo "╚══════════════════════════════════════════════════╝\n\n";
 
-/**
- * Script de teste da Fase 3 — CobrancaService
- * Execute com: php tests/fase3_teste.php
- */
+$pass = 0; $fail = 0;
 
-require __DIR__ . '/../vendor/autoload.php';
-
-$app = require __DIR__ . '/../bootstrap/app.php';
-$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-
-use App\Services\CobrancaService;
-use App\Models\ConfiguracaoTaxa;
-use App\Models\Consumidor;
-use App\Models\Leitura;
-
-$service = new CobrancaService();
-$config  = ConfiguracaoTaxa::ativa();
-
-echo "╔══════════════════════════════════════════╗\n";
-echo "║   TESTE FASE 3 — CobrancaService         ║\n";
-echo "╚══════════════════════════════════════════╝\n\n";
-
-echo "Configuração ativa:\n";
-echo "  Taxa fixa:        R\$ {$config->taxa_fixa}\n";
-echo "  Valor excedente:  R\$ {$config->valor_excedente}/m³\n\n";
-
-// Cenários de teste
-$cenarios = [
-    ['consumo' => 0.0,  'esperado' => 25.00, 'descricao' => '0 m³  (sem consumo)'],
-    ['consumo' => 5.0,  'esperado' => 25.00, 'descricao' => '5 m³  (abaixo do limite)'],
-    ['consumo' => 10.0, 'esperado' => 25.00, 'descricao' => '10 m³ (exatamente no limite)'],
-    ['consumo' => 11.0, 'esperado' => 27.00, 'descricao' => '11 m³ (1 m³ excedente)'],
-    ['consumo' => 15.0, 'esperado' => 35.00, 'descricao' => '15 m³ (5 m³ excedentes) [EXEMPLO DO ENUNCIADO]'],
-    ['consumo' => 20.0, 'esperado' => 45.00, 'descricao' => '20 m³ (10 m³ excedentes)'],
-    ['consumo' => 25.5, 'esperado' => 56.00, 'descricao' => '25.5 m³ (15.5 m³ excedentes)'],
-];
-
-echo "--- Cenários de Cálculo ---\n";
-$passou = 0;
-$falhou = 0;
-
-foreach ($cenarios as $c) {
-    $resultado = $service->calcularValor($c['consumo'], $config);
-    $ok = abs($resultado - $c['esperado']) < 0.01;
-
-    $status = $ok ? '✅ OK' : '❌ FALHOU';
-    $ok ? $passou++ : $falhou++;
-
-    echo sprintf(
-        "  %s  %-50s → R\$ %6.2f  (esperado: R\$ %6.2f)\n",
-        $status,
-        $c['descricao'],
-        $resultado,
-        $c['esperado']
-    );
+function check(string $label, bool $result, string $detail = ''): void {
+    global $pass, $fail;
+    if ($result) { echo "  ✅ PASSOU  $label" . ($detail ? " → $detail" : '') . "\n"; $pass++; }
+    else         { echo "  ❌ FALHOU  $label" . ($detail ? " → $detail" : '') . "\n"; $fail++; }
 }
 
-echo "\n--- Resultado: {$passou} passou / {$falhou} falhou ---\n\n";
+$baseDir = __DIR__ . '/..';
 
-// Teste de banco: verifica se ConfiguracaoTaxa::ativa() funciona
-echo "--- Teste de Banco de Dados ---\n";
-try {
-    $cfg = ConfiguracaoTaxa::ativa();
-    echo "  ✅ ConfiguracaoTaxa::ativa() → id={$cfg->id}, taxa_fixa={$cfg->taxa_fixa}\n";
-} catch (\Exception $e) {
-    echo "  ❌ Erro: " . $e->getMessage() . "\n";
+// 1. Verificando .env (APP_DEBUG=false)
+$envContent = file_exists("$baseDir/.env") ? file_get_contents("$baseDir/.env") : '';
+check('APP_DEBUG deve estar desligado no .env', str_contains($envContent, 'APP_DEBUG=false'));
+
+// 2. Verificando @csrf nos formulários POST/PUT/DELETE
+$viewsDir = "$baseDir/resources/views";
+$files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($viewsDir));
+$missingCsrf = [];
+
+foreach ($files as $file) {
+    if ($file->isFile() && str_ends_with($file->getFilename(), '.blade.php')) {
+        $content = file_get_contents($file->getPathname());
+        
+        // Se tem <form method="POST" mas não tem @csrf
+        if (preg_match_all('/<form[^>]*method=[\'"]?(POST|PUT|DELETE)[\'"]?[^>]*>/i', $content)) {
+            if (!str_contains($content, '@csrf')) {
+                $missingCsrf[] = $file->getFilename();
+            }
+        }
+    }
 }
+check('Todos os formulários POST possuem @csrf', count($missingCsrf) === 0, count($missingCsrf) > 0 ? "Faltando em: " . implode(', ', $missingCsrf) : '');
 
-// Conta consumidores e leituras
-$totalConsumidores = Consumidor::count();
-$totalLeituras     = Leitura::count();
-echo "  ℹ  Consumidores cadastrados: {$totalConsumidores}\n";
-echo "  ℹ  Leituras registradas:     {$totalLeituras}\n";
+// 3. Verificando vulnerabilidade XSS ({!! !!)
+$hasXss = false;
+foreach ($files as $file) {
+    if ($file->isFile() && str_ends_with($file->getFilename(), '.blade.php')) {
+        $content = file_get_contents($file->getPathname());
+        if (str_contains($content, '{!!')) {
+            $hasXss = true;
+            break;
+        }
+    }
+}
+check('Nenhum output sem escape (XSS {!! !!}) detectado', !$hasXss);
 
-echo "\n✅ Teste da Fase 3 concluído!\n";
+// 4. Verificando vulnerabilidade de SQL Injection
+$appDir = "$baseDir/app";
+$phpFiles = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($appDir));
+$hasSqlInjection = false;
+
+foreach ($phpFiles as $file) {
+    if ($file->isFile() && str_ends_with($file->getFilename(), '.php')) {
+        $content = file_get_contents($file->getPathname());
+        if (str_contains($content, 'DB::raw') || str_contains($content, 'whereRaw') || str_contains($content, 'orderByRaw')) {
+            $hasSqlInjection = true;
+            break;
+        }
+    }
+}
+check('Nenhuma query bruta detectada (SQL Injection mitigado)', !$hasSqlInjection);
+
+echo "\n══════════════════════════════════════════════════\n";
+echo "  Resultado: {$pass} passou / {$fail} falhou\n";
+echo "══════════════════════════════════════════════════\n\n";
+
+if ($fail === 0) echo "🎉 FASE 3 COMPLETAMENTE VALIDADA!\n";
+else            echo "⚠️  Há {$fail} problema(s) a corrigir.\n";
