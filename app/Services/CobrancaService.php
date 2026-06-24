@@ -6,45 +6,43 @@ use App\Models\ConfiguracaoTaxa;
 use App\Models\Fatura;
 use App\Models\Leitura;
 
+/**
+ * Serviço de cobrança — orquestra a geração de faturas (SOLID: SRP / DIP).
+ *
+ * Delega o cálculo matemático ao FaturaCalculatorService (Inversão de Dependência):
+ * não instancia dependências diretamente, recebe via constructor injection.
+ */
 class CobrancaService
 {
     /**
-     * Limite de consumo isento do excedente (em m³).
+     * Limite padrão do sistema (m³ incluídos na taxa fixa).
+     * Definido aqui como regra de negócio da associação.
      */
-    private const LIMITE_TAXA_FIXA_M3 = 10.0;
+    public const LIMITE_M3 = 10.0;
+
+    public function __construct(
+        private readonly FaturaCalculatorService $calculator
+    ) {}
 
     /**
-     * Calcula o valor total da fatura com base no consumo e na configuração vigente.
+     * Calcula o valor total da fatura delegando ao FaturaCalculatorService.
      *
-     * Regra de negócio:
-     *   - Até 10 m³: cobra apenas a taxa fixa.
-     *   - Acima de 10 m³: taxa fixa + (m³ excedentes × valor_excedente).
-     *
-     * Exemplo: 15 m³ consumidos, taxa_fixa=25, valor_excedente=2
-     *   → R$ 25,00 + (5 m³ × R$ 2,00) = R$ 35,00
-     *
-     * @param  float              $consumo_m3   Consumo calculado (leitura_atual - leitura_anterior)
-     * @param  ConfiguracaoTaxa   $config       Configuração de taxa ativa
-     * @return float              Valor total em reais
+     * @param  float            $consumo_m3  Consumo em m³
+     * @param  ConfiguracaoTaxa $config      Configuração de taxa vigente
+     * @return float            Valor total em reais
      */
     public function calcularValor(float $consumo_m3, ConfiguracaoTaxa $config): float
     {
-        $taxaFixa      = (float) $config->taxa_fixa;
-        $valorExcedente = (float) $config->valor_excedente;
-
-        if ($consumo_m3 <= self::LIMITE_TAXA_FIXA_M3) {
-            return round($taxaFixa, 2);
-        }
-
-        $m3Excedentes = $consumo_m3 - self::LIMITE_TAXA_FIXA_M3;
-        $valorTotal   = $taxaFixa + ($m3Excedentes * $valorExcedente);
-
-        return round($valorTotal, 2);
+        return $this->calculator->calcular(
+            consumoM3:      $consumo_m3,
+            taxaFixa:       (float) $config->taxa_fixa,
+            limiteM3:       self::LIMITE_M3,
+            valorExcedente: (float) $config->valor_excedente
+        );
     }
 
     /**
-     * Gera (ou regera) a fatura associada a uma leitura.
-     * Se já existir fatura pendente para a leitura, ela é atualizada.
+     * Gera (ou atualiza) a fatura associada a uma leitura.
      * Faturas pagas não são recalculadas.
      *
      * @param  Leitura $leitura  Leitura já persistida no banco

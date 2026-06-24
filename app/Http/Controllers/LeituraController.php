@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ConfiguracaoTaxa;
 use App\Models\Consumidor;
+use App\Models\Fatura;
 use App\Models\Leitura;
-use App\Services\CobrancaService;
+use App\Services\FaturaCalculatorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -12,8 +14,12 @@ use Illuminate\View\View;
 
 class LeituraController extends Controller
 {
+    /**
+     * Injeção de Dependência: FaturaCalculatorService é recebido pelo container
+     * do Laravel — nunca instanciado com `new` diretamente (Princípio DIP/SOLID).
+     */
     public function __construct(
-        private readonly CobrancaService $cobrancaService
+        private readonly FaturaCalculatorService $faturaCalculator
     ) {}
 
     /**
@@ -51,6 +57,7 @@ class LeituraController extends Controller
      * Regras de negócio aplicadas:
      *   1. leitura_atual >= leitura_anterior (não pode regredir)
      *   2. Apenas uma leitura por consumidor/mês/ano
+     *   3. Cálculo da fatura via FaturaCalculatorService (DI — SOLID/DIP)
      */
     public function store(Request $request): RedirectResponse
     {
@@ -103,16 +110,33 @@ class LeituraController extends Controller
 
         // ── Persistência da leitura ──────────────────────────────────────────
         $leitura = Leitura::create([
-            'consumidor_id'  => $consumidor->id,
-            'mes_referencia' => $validated['mes_referencia'],
-            'ano_referencia' => $validated['ano_referencia'],
+            'consumidor_id'    => $consumidor->id,
+            'mes_referencia'   => $validated['mes_referencia'],
+            'ano_referencia'   => $validated['ano_referencia'],
             'leitura_anterior' => $leituraAnterior,
             'leitura_atual'    => $validated['leitura_atual'],
             'consumo_m3'       => $consumo,
         ]);
 
-        // ── Geração automática da fatura ─────────────────────────────────────
-        $this->cobrancaService->gerarFatura($leitura);
+        // ── Cálculo da fatura via FaturaCalculatorService (DI/SOLID) ────────
+        $config = ConfiguracaoTaxa::ativa();
+
+        $valorTotal = $this->faturaCalculator->calcular(
+            consumoM3:      $consumo,
+            taxaFixa:       (float) $config->taxa_fixa,
+            limiteM3:       10.0,
+            valorExcedente: (float) $config->valor_excedente
+        );
+
+        // ── Geração da fatura ────────────────────────────────────────────────
+        Fatura::updateOrCreate(
+            ['leitura_id' => $leitura->id],
+            [
+                'consumidor_id' => $consumidor->id,
+                'valor_total'   => $valorTotal,
+                'status'        => 'pendente',
+            ]
+        );
 
         return redirect()
             ->route('faturas.index', [
