@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Consumidor;
+use App\Models\LogAcesso;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -14,6 +15,13 @@ class ConsumidorController extends Controller
      */
     public function index(): View
     {
+        LogAcesso::create([
+            'user_id' => auth()->id(),
+            'consumidor_id' => null, // null for listing all
+            'acao' => 'Visualizou listagem de consumidores',
+            'ip_address' => request()->ip(),
+        ]);
+
         $consumidores = Consumidor::orderBy('nome')->paginate(15);
 
         return view('consumidores.index', compact('consumidores'));
@@ -57,6 +65,13 @@ class ConsumidorController extends Controller
      */
     public function show(Consumidor $consumidor): View
     {
+        LogAcesso::create([
+            'user_id' => auth()->id(),
+            'consumidor_id' => $consumidor->id,
+            'acao' => 'Visualizou detalhes do consumidor',
+            'ip_address' => request()->ip(),
+        ]);
+
         $consumidor->load(['leituras' => fn($q) => $q->orderByDesc('ano_referencia')->orderByDesc('mes_referencia')]);
 
         return view('consumidores.show', compact('consumidor'));
@@ -67,6 +82,13 @@ class ConsumidorController extends Controller
      */
     public function edit(Consumidor $consumidor): View
     {
+        LogAcesso::create([
+            'user_id' => auth()->id(),
+            'consumidor_id' => $consumidor->id,
+            'acao' => 'Acessou formulário de edição do consumidor',
+            'ip_address' => request()->ip(),
+        ]);
+
         return view('consumidores.edit', compact('consumidor'));
     }
 
