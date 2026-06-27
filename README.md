@@ -278,6 +278,48 @@ Histórico de commits seguindo o padrão [Conventional Commits](https://www.conv
 
 ---
 
+## Aplicação em produção
+
+Acesse a aplicação hospedada na nuvem através do link abaixo:
+**[https://seu-projeto.up.railway.app](https://seu-projeto.up.railway.app)**
+
+### Credenciais de Teste
+
+| Perfil | E-mail | Senha |
+|---|---|---|
+| **Gestor** | gestor@associacao.com.br | senha123 |
+| **Leiturista** | leiturista@associacao.com.br | senha123 |
+
+---
+
+## Rodando localmente com Docker
+
+Você pode rodar a aplicação inteira em containers isolados sem precisar instalar o PHP ou MySQL localmente.
+
+### 1. Suba os containers
+
+```bash
+docker-compose up -d --build
+```
+
+### 2. Execute as migrations
+
+```bash
+docker-compose exec app php artisan migrate --seed
+```
+
+### 3. Acesse a aplicação
+
+Acesse no navegador: **http://localhost:8000**
+
+---
+
+## Autores
+
+**Gabriel Soares Vieira e Vanderson Vieira Lima**
+
+---
+
 ## Licença
 
 Este projeto foi desenvolvido para fins acadêmicos e comunitários.
